@@ -18,16 +18,19 @@
 SoftwareSerial mySerial(GPS_TX, GPS_RX);
 
 Adafruit_GPS GPS(&mySerial);
-
+//char readbuffer [64] = {0};
+//char c;
 
 boolean usingInterrupt = true;
+boolean display_GPS_data = false;
 void useInterrupt(boolean); // Func prototype keeps Arduino 0023 happy
-
+float GPS_speed = 0;
 
 void ComputeDistanceTravelled(float);
 void SetCompareMatchRegisterForHertz(float);
 
 int manual_speed;
+int old_GPS_seconds = 0;
 uint32_t timer = millis();
 uint32_t odometer_timer = millis();
 uint32_t odo_reset_time = millis();
@@ -44,6 +47,8 @@ int total_steps = 0;
 float old_speed;
 boolean flipflop; 
 boolean manual_high_speed = false;
+
+//#define GPSECHO 1
 void setup()  
 {
     
@@ -54,6 +59,7 @@ void setup()
 
   // 9600 NMEA is the default baud rate for Adafruit MTK GPS's- some use 4800
   GPS.begin(4800);
+  //mySerial.begin (4800);
   
   useInterrupt(true);
 
@@ -95,7 +101,7 @@ sei();//allow interrupts
 
 void SetCompareMatchRegisterForHertz(float hzsetpoint)
 {
-  
+
 //compare match register = [ 16,000,000Hz/ (prescaler * desired interrupt frequency) ] - 1
 // prescaler is 1024
 
@@ -157,42 +163,57 @@ void loop()                     // run over and over again
 
   
   // if a sentence is received, we can check the checksum, parse it...
-  if (GPS.newNMEAreceived()) {
+   //char c = GPS.read();
+   //if (c) Serial.print(c);
+
+   //if (mySerial.available()>0)
+   //{
+   ///c = mySerial.read();
+  // if (c) Serial.print(c);
+   //}
+   
+ 
+  if ((GPS.newNMEAreceived())&&(!manual_commands)) {
   
-    if (!GPS.parse(GPS.lastNMEA()))   // this also sets the newNMEAreceived() flag to false
+    if (!GPS.parse(GPS.lastNMEA()))   // this also sets the newNMEAreceived() flag to false    
      return;  // we can fail to parse a sentence in which case we should just wait for another      
+     else
+     {
+      if (GPS.fix)      
+      {
+        GPS_speed = GPS.speed;
+          
+        if (GPS_speed >= 0.1)
+        {
+        
+          if (GPS.seconds != old_GPS_seconds)
+          {
+            Serial << "Fix valid ; speed is " << GPS_speed << "\n";
+            old_GPS_seconds = GPS.seconds;
+            SetCompareMatchRegisterForHertz( GPS_speed * KNOTS_TO_HZ);        
+            ComputeDistanceTravelled(GPS_speed);
+          }
+        }
+        else
+           SetCompareMatchRegisterForHertz( -1);
+      }
+    else
+      SetCompareMatchRegisterForHertz( -1);
+     }
              
   }
 
-  if (!manual_commands)
-  {
-    if (GPS.fix)
-    {
-      Serial << "Fix valid ; speed is " << GPS.speed;      
+   if (manual_commands)
+   ComputeDistanceTravelled(manual_speed);                     
 
-      if (GPS.speed >= 0.1)
-      {
-      
-        SetCompareMatchRegisterForHertz( GPS.speed * KNOTS_TO_HZ);        
-        ComputeDistanceTravelled(GPS.speed);
-      }
-      else
-         SetCompareMatchRegisterForHertz( -1);
-    }
-    else
-     SetCompareMatchRegisterForHertz( -1);
-  }
-  
-  else  //manual commands      
-      ComputeDistanceTravelled(manual_speed);                     
-  
        
   millis_ = millis();
   // if millis() or timer wraps around, we'll just reset it
   if (timer > millis_)  timer = millis_;
   if (odometer_timer > millis_)  odometer_timer = millis_;
   
-  //PrintStuff();
+  if (display_GPS_data)
+    PrintStuff();
 
   ReadKeyboardCmds();
 }
@@ -207,6 +228,13 @@ void ReadKeyboardCmds()
       if ((rx_byte == 't') || (rx_byte == 'T')) 
       {
         StepOdometerIncrement();
+        
+      }
+
+      // check if test command
+      if ((rx_byte == 'g') || (rx_byte == 'G')) 
+      {
+        display_GPS_data = !display_GPS_data;
         
       }
 
@@ -306,10 +334,11 @@ void StepOdometerIncrement()
 
 void PrintStuff()
 {
+
   // approximately every 2 seconds or so, print out the current stats
   if (millis() - timer > 2000) { 
     timer = millis(); // reset the timer
-    
+   
     Serial.print("\nTime: ");
     Serial.print(GPS.hour, DEC); Serial.print(':');
     Serial.print(GPS.minute, DEC); Serial.print(':');
@@ -337,4 +366,5 @@ void PrintStuff()
       Serial.print("Satellites: "); Serial.println((int)GPS.satellites);
     }
   }
+  
 }
