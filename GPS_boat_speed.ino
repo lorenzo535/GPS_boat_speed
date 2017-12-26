@@ -8,11 +8,13 @@
 
 #define SQUAREWAVE_OUT 2
 #define MILESCOUNTER_OUT 3
-#define SEC_TO_HOURS 0.000277778
-#define KNOTS_TO_HZ 1
+#define SEC_TO_HOURS 0.000277778f
+#define KNOTS_TO_HZ 17
 #define OCR1A_1HZ 15624     //value of the timer counter for a 1Hz interrupt call
 #define GPSECHO false
-  
+#define DISTANCE_INTEGRAL_STEP_S 3
+#define S_TO_MS 1000.0f
+#define MS_TO_S 0.001f
 SoftwareSerial mySerial(GPS_TX, GPS_RX);
 
 Adafruit_GPS GPS(&mySerial);
@@ -24,15 +26,24 @@ void useInterrupt(boolean); // Func prototype keeps Arduino 0023 happy
 
 void ComputeDistanceTravelled(float);
 void SetCompareMatchRegisterForHertz(float);
+
 int manual_speed;
 uint32_t timer = millis();
 uint32_t odometer_timer = millis();
+uint32_t odo_reset_time = millis();
+uint32_t time_delta = 0;
 uint32_t millis_;
 boolean manual_commands;
 float miles_travelled;
+float old_miles_travelled;
+float distance_travelled;
+float delta_travelled;
+float delta;
+int steps, i;
+int total_steps = 0;
 float old_speed;
 boolean flipflop; 
-
+boolean manual_high_speed = false;
 void setup()  
 {
     
@@ -51,10 +62,13 @@ void setup()
   pinMode(SQUAREWAVE_OUT, OUTPUT);
   pinMode(MILESCOUNTER_OUT, OUTPUT);
   miles_travelled = 0.0;
+  old_miles_travelled = 0.0;
   old_speed = 0.0;
 
   manual_speed = 1;
   flipflop = false;
+
+  digitalWrite(MILESCOUNTER_OUT, true);
 
 //
 cli();//stop interrupts
@@ -85,6 +99,10 @@ void SetCompareMatchRegisterForHertz(float hzsetpoint)
 //compare match register = [ 16,000,000Hz/ (prescaler * desired interrupt frequency) ] - 1
 // prescaler is 1024
 
+//vcalibration tweak
+if (hzsetpoint < 40)
+  hzsetpoint = hzsetpoint * 0.9;
+
 cli();
 //OCR1A = 15624;// = (16*10^6) / (1*1024) - 1 (must be <65536)
 TCNT1  = 0;
@@ -103,7 +121,7 @@ ISR(TIMER1_COMPA_vect)
 {
   flipflop = !flipflop;      
   digitalWrite (SQUAREWAVE_OUT,flipflop);
-  Serial <<".";
+  //Serial <<".";
 }
 
 
@@ -168,10 +186,7 @@ void loop()                     // run over and over again
   else  //manual commands      
       ComputeDistanceTravelled(manual_speed);                     
   
-    
-
-
-   
+       
   millis_ = millis();
   // if millis() or timer wraps around, we'll just reset it
   if (timer > millis_)  timer = millis_;
@@ -188,6 +203,23 @@ void ReadKeyboardCmds()
    {  
       char rx_byte = Serial.read();       // get the character
     
+      // check if test command
+      if ((rx_byte == 't') || (rx_byte == 'T')) 
+      {
+        StepOdometerIncrement();
+        
+      }
+
+      if ((rx_byte == 'o') || (rx_byte == 'O')) 
+      {
+        ResetOdometer();        
+      }
+
+      if ((rx_byte == 'h') || (rx_byte == 'H')) 
+      {
+       manual_high_speed = ! manual_high_speed;
+      }
+      
       // check if manual command
       if ((rx_byte == 'x') || (rx_byte == 'X')) 
       {
@@ -198,9 +230,12 @@ void ReadKeyboardCmds()
       if (manual_commands)
         {
           if ((rx_byte >= '1') && (rx_byte <= '9'))
+          {
           manual_speed = int (rx_byte) - 48;
-          Serial << "New speed" << manual_speed << "knots\n";          
+          if (manual_high_speed) manual_speed += 9;
+          Serial << "//New speed " << manual_speed << " knots\\ \n";          
           SetCompareMatchRegisterForHertz( manual_speed * KNOTS_TO_HZ);
+          }
           
         }
   
@@ -211,13 +246,62 @@ void ReadKeyboardCmds()
 void ComputeDistanceTravelled( float speed)
 {
 //Compute distance travelled
-    if (millis() - odometer_timer > 5000) 
+  time_delta = millis() - odometer_timer ;
+    if (time_delta > DISTANCE_INTEGRAL_STEP_S * S_TO_MS) 
     { 
       odometer_timer = millis(); // reset the timer
-      miles_travelled = miles_travelled + (speed + old_speed) * 5 * SEC_TO_HOURS /2;
-      old_speed= speed;
       
+      delta = (speed + old_speed) * time_delta * MS_TO_S * SEC_TO_HOURS /2.0f;  
+      miles_travelled = miles_travelled  + delta;
+      delta_travelled = miles_travelled - old_miles_travelled;
+      
+      old_speed= speed;
+
+       
+     //Serial << "time delta " <<_FLOAT (time_delta, 4) << "=== delta distance " << _FLOAT (delta, 4) << "\n";
+     
+     if ((delta_travelled) > 0.01)
+     {
+       steps = (int)(delta_travelled / 0.01);
+       //Serial << "delta: "<< _FLOAT (delta_travelled, 4) << "  steps: "<< steps << "\n";
+       for (i = 0; i < steps; i++)
+       {
+        StepOdometerIncrement();
+        total_steps = total_steps +1;
+       }
+
+       old_miles_travelled = miles_travelled - (delta_travelled - steps * 0.01);
+       Serial << "delta_travelled " <<_FLOAT (delta_travelled, 4);
+       Serial << "miles travelled  " << _FLOAT (miles_travelled, 4) << " old_miles_travelled" << _FLOAT (old_miles_travelled,4) << "\n";       
+       Serial << "miles are now " << miles_travelled << " speed is " << speed << " total steps sent: "<< total_steps <<"\n";
+     }
+     
+     
     }
+}
+
+void ResetOdometer()
+{
+  Serial << " ### RESET ### \n";
+  Serial << " Odometer was running since " << (millis () - odo_reset_time) * MS_TO_S<< " seconds, distance travelled:" << miles_travelled <<"\n" ;
+  
+  miles_travelled = 0.0;
+  delta_travelled = 0.0;
+  old_speed = 0.0;
+  old_miles_travelled = 0.0;
+  total_steps = 0;
+  odo_reset_time = millis();
+}
+
+void StepOdometerIncrement()
+{
+        digitalWrite(MILESCOUNTER_OUT, true);
+       delay (200);
+       digitalWrite(MILESCOUNTER_OUT, false);
+       delay (200);
+       Serial << "step \n";
+ 
+
 }
 
 void PrintStuff()
