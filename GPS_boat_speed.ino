@@ -21,7 +21,7 @@
 #define LED_GPS_VALID 12
 
 SoftwareSerial mySerial(GPS_TX, GPS_RX);
-Adafruit_GPS GPS(&mySerial);
+Adafruit_GPS GPS(Serial);
 
 //char readbuffer [64] = {0};
 //char c;
@@ -60,8 +60,8 @@ void setup()
 
   // connect at 115200 so we can read the GPS fast enough and echo without dropping chars
   // also spit it out
-  Serial.begin(9600);
-  Serial.println("GPS Boat speed display");
+  mySerial.begin(9600);
+  mySerial.println("GPS Boat speed display");
 
   // 9600 NMEA is the default baud rate for Adafruit MTK GPS's- some use 4800
   GPS.begin(4800);
@@ -207,7 +207,7 @@ if (!manual_commands)
         {
           if (GPS.seconds != old_GPS_seconds)
           {
-            Serial << "Fix valid ; speed is " << GPS_speed << "\n";
+            mySerial << "Fix valid ; speed is " << GPS_speed << "\n";
             old_GPS_seconds = GPS.seconds;
             SetCompareMatchRegisterForHertz( GPS_speed * KNOTS_TO_HZ);
             ComputeDistanceTravelled(GPS_speed);
@@ -255,9 +255,9 @@ if (!manual_commands)
 
 void ReadKeyboardCmds()
 {
-  if (Serial.available() > 0)
+  if (mySerial.available() > 0)
   {
-    char rx_byte = Serial.read();       // get the character
+    char rx_byte = mySerial.read();       // get the character
 
     // check if test command
     if ((rx_byte == 't') || (rx_byte == 'T'))
@@ -287,7 +287,7 @@ void ReadKeyboardCmds()
     if ((rx_byte == 'x') || (rx_byte == 'X'))
     {
       manual_commands = !manual_commands;
-      Serial << "switched to " << (manual_commands ? "manual" : "programmed") << "controls \n";
+      mySerial << "switched to " << (manual_commands ? "manual" : "programmed") << "controls \n";
 
     }
     if (manual_commands)
@@ -296,7 +296,7 @@ void ReadKeyboardCmds()
       {
         manual_speed = int (rx_byte) - 48;
         if (manual_high_speed) manual_speed += 9;
-        Serial << "//New speed " << manual_speed << " knots\\ \n";
+        mySerial << "//New speed " << manual_speed << " knots\\ \n";
         SetCompareMatchRegisterForHertz( manual_speed * KNOTS_TO_HZ);
       }
 
@@ -334,9 +334,9 @@ void ComputeDistanceTravelled( float speed)
       }
 
       old_miles_travelled = miles_travelled - (delta_travelled - steps * 0.01);
-      Serial << "delta_travelled " << _FLOAT (delta_travelled, 4);
-      Serial << "miles travelled  " << _FLOAT (miles_travelled, 4) << " old_miles_travelled" << _FLOAT (old_miles_travelled, 4) << "\n";
-      Serial << "miles are now " << miles_travelled << " speed is " << speed << " total steps sent: " << total_steps << "\n";
+      mySerial << "delta_travelled " << _FLOAT (delta_travelled, 4);
+      mySerial << "miles travelled  " << _FLOAT (miles_travelled, 4) << " old_miles_travelled" << _FLOAT (old_miles_travelled, 4) << "\n";
+      mySerial << "miles are now " << miles_travelled << " speed is " << speed << " total steps sent: " << total_steps << "\n";
     }
 
 
@@ -345,8 +345,8 @@ void ComputeDistanceTravelled( float speed)
 
 void ResetOdometer()
 {
-  Serial << " ### RESET ### \n";
-  Serial << " Odometer was running since " << (millis () - odo_reset_time) * MS_TO_S << " seconds, distance travelled:" << miles_travelled << "\n" ;
+  mySerial << " ### RESET ### \n";
+  mySerial << " Odometer was running since " << (millis () - odo_reset_time) * MS_TO_S << " seconds, distance travelled:" << miles_travelled << "\n" ;
 
   miles_travelled = 0.0;
   delta_travelled = 0.0;
@@ -362,7 +362,7 @@ void StepOdometerIncrement()
   delay (200);
   digitalWrite(MILESCOUNTER_OUT, false);
   delay (200);
-  Serial << "step \n";
+  mySerial << "step \n";
 
 
 }
@@ -374,31 +374,31 @@ void PrintStuff()
   if (millis() - timer > 2000) {
     timer = millis(); // reset the timer
 
-    Serial.print("\nTime: ");
-    Serial.print(GPS.hour, DEC); Serial.print(':');
-    Serial.print(GPS.minute, DEC); Serial.print(':');
-    Serial.print(GPS.seconds, DEC); Serial.print('.');
-    Serial.println(GPS.milliseconds);
-    Serial.print("Date: ");
-    Serial.print(GPS.day, DEC); Serial.print('/');
-    Serial.print(GPS.month, DEC); Serial.print("/20");
-    Serial.println(GPS.year, DEC);
-    Serial.print("Fix: "); Serial.print((int)GPS.fix);
-    Serial.print(" quality: "); Serial.println((int)GPS.fixquality);
+    mySerial.print("\nTime: ");
+    mySerial.print(GPS.hour, DEC); mySerial.print(':');
+    mySerial.print(GPS.minute, DEC); mySerial.print(':');
+    mySerial.print(GPS.seconds, DEC); mySerial.print('.');
+    mySerial.println(GPS.milliseconds);
+    mySerial.print("Date: ");
+    mySerial.print(GPS.day, DEC); mySerial.print('/');
+    mySerial.print(GPS.month, DEC); mySerial.print("/20");
+    mySerial.println(GPS.year, DEC);
+    mySerial.print("Fix: "); mySerial.print((int)GPS.fix);
+    mySerial.print(" quality: "); mySerial.println((int)GPS.fixquality);
     if (GPS.fix) {
-      Serial.print("Location: ");
-      Serial.print(GPS.latitude, 4); Serial.print(GPS.lat);
-      Serial.print(", ");
-      Serial.print(GPS.longitude, 4); Serial.println(GPS.lon);
-      Serial.print("Location (in degrees, works with Google Maps): ");
-      Serial.print(GPS.latitudeDegrees, 4);
-      Serial.print(", ");
-      Serial.println(GPS.longitudeDegrees, 4);
+      mySerial.print("Location: ");
+      mySerial.print(GPS.latitude, 4); mySerial.print(GPS.lat);
+      mySerial.print(", ");
+      mySerial.print(GPS.longitude, 4); mySerial.println(GPS.lon);
+      mySerial.print("Location (in degrees, works with Google Maps): ");
+      mySerial.print(GPS.latitudeDegrees, 4);
+      mySerial.print(", ");
+      mySerial.println(GPS.longitudeDegrees, 4);
 
-      Serial.print("Speed (knots): "); Serial.println(GPS.speed);
-      Serial.print("Angle: "); Serial.println(GPS.angle);
-      Serial.print("Altitude: "); Serial.println(GPS.altitude);
-      Serial.print("Satellites: "); Serial.println((int)GPS.satellites);
+      mySerial.print("Speed (knots): "); mySerial.println(GPS.speed);
+      mySerial.print("Angle: "); mySerial.println(GPS.angle);
+      mySerial.print("Altitude: "); mySerial.println(GPS.altitude);
+      mySerial.print("Satellites: "); mySerial.println((int)GPS.satellites);
     }
   }
 
